@@ -43,8 +43,52 @@ def apiMutation(mutation, vars)
 end
 
 #################################################################################################
-#result = apiQuery("item(id: $itemID) { title }", { itemID: ["ID!", "ark:/13030/qt99m5j3q7"] })
-result = apiMutation("mintProvisionalID(input: $input) { id }", { input: ["MintProvisionalIDInput!",
-  { sourceName: "elements", sourceID: "abc123" }
-] })
-puts "result=#{result}"
+
+result = apiQuery("item(id: $itemID) { title }", { itemID: ["ID!", "ark:/13030/qt99m5j3q7"] })
+title = result["item"]["title"]
+if title != "Onboard Feedback to Promote Eco-Driving: Average Impact and Important Features"
+  puts "failed: get item #{title}"
+  puts result
+else
+  puts "success: get item"
+end
+
+result = apiQuery("rootUnit{id}", {})
+if result["rootUnit"]["id"] != "root"
+  puts "failed: get root unit"
+  puts result
+else
+  puts "success: get root unit"
+end
+
+result = apiQuery("item(id: $itemID) { suppFiles{ size } }", {itemID: ["ID!", "ark:/13030/qt7sd5267g"]})
+if result["item"]["suppFiles"].length == 6
+  puts "success: get large file size"
+else
+  puts "failed: get large file size"
+  puts result
+end
+
+result = apiQuery("item(id: $itemID) { id status }", {itemID: ["ID!", "ark:/13030/qt8k5278rr"]})
+if result["item"]["status"] == "PENDING"
+  puts "success: status pending"
+else
+  puts "failed: status pending"
+  puts result
+end
+
+result = apiMutation("depositItem(input: $input) { id message }", {input: ["DepositItemInput!", {id: "ark:/13030/qtXXXXXXXX", sourceName: "janeway", sourceID: "10", submitterEmail: "a@b.c", title: "Test Title", type: "ARTICLE", published: "2020-12-20", isPeerReviewed: true, units: ['ucm']}]})
+if result["depositItem"]["message"].index("ERROR") == 0
+   puts "success: update non-existant"
+else
+  puts "failed: update non-existant"
+  puts result
+end
+
+result = apiMutation("mintProvisionalID(input: $input) { id }", { input: ["MintProvisionalIDInput!", { sourceName: "elements", sourceID: "abc123" } ] })
+if result["mintProvisionalID"]["item"].index("ark:/13030/qt") == 0
+  puts "success: mint provisional id"
+else
+  puts "failed: mint provisional id"
+  puts result
+end
