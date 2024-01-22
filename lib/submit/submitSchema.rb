@@ -270,54 +270,62 @@ def depositItem(input, replace:)
   source_url = input[:sourceURL] || "oapolicy.universityofcalifornia.edu"
   actionVerb = replace == :files ? "Redeposited" : replace == :metadata ? "Updated" : "Deposited"
   comment = "'#{actionVerb} at #{source_url}' "
-  Net::SSH.start($submitServer, $submitUser, **$submitSSHOpts) do |ssh|
-    # Verify that the ARK isn't a dupe for this publication ID (can happen if old incomplete
-    # items aren't properly cleaned up).
-    if !replace
-      ssh.exec_sc!("/apps/eschol/subi/lib/subiGuts.rb --checkID #{shortArk} " +
-                   "#{input['sourceName']} #{input['sourceID']}")
-      $provisionalIDs.delete(fullArk)
+  begin
+    Net::SSH.start($submitServer, $submitUser, **$submitSSHOpts) do |ssh|
+      out = ssh.exec_sc!("/apps/eschol/subi/lib/subiGuts.rb --arkExists #{input['sourceName']} #{shortArk} ")
+
+      # Verify that the ARK isn't a dupe for this publication ID (can happen if old incomplete
+      # items aren't properly cleaned up).
+      if !replace
+        ssh.exec_sc!("/apps/eschol/subi/lib/subiGuts.rb --checkID #{shortArk} " +
+                     "#{input['sourceName']} #{input['sourceID']}")
+        $provisionalIDs.delete(fullArk)
+      end
+
+      # Publish the item
+      metaText = uci.to_xml(indent:3)
+      File.open("/tmp/meta.tmp.xml", "w:UTF-8") { |io|
+        io.write(metaText)
+      }
+
+      out = ssh.exec_sc!("/apps/eschol/subi/lib/subiGuts.rb " +
+                  "#{replace == :files ? "--replaceFiles" : replace == :metadata ? "--replaceMetadata" : "--depositItem"} " +
+                  "#{shortArk} " +
+                  "#{comment} " +
+                  "#{input['submitterEmail'] || "''" } -", metaText)
+      puts "stdout from main subiGuts operation:\n#{out[:stdout]}"
+
+      if input.key?(:imgFiles)
+        imgs = JSON.generate(input[:imgFiles].map{ |i|
+            {"file": i[:file], "fetchLink": i[:fetchLink]}
+          })
+        out = ssh.exec_sc!("/apps/eschol/subi/lib/subiGuts.rb --uploadImages #{shortArk} '#{imgs}'")
+        puts "stdout from uploadImages:\n#{out[:stdout]}"
+      end
+
+      if input.key?(:cssFiles)
+        css = JSON.generate(input[:cssFiles].map{ |i|
+            {"file": i[:file], "fetchLink": i[:fetchLink]}
+          })
+        out = ssh.exec_sc!("/apps/eschol/subi/lib/subiGuts.rb --uploadImages #{shortArk} '#{css}'")
+        puts "stdout from uploadImages:\n#{out[:stdout]}"
+      end
+
+      # Claim the provisional ARK if not already done
+      if !replace
+        ssh.exec_sc!("/apps/eschol/subi/lib/subiGuts.rb --claimID #{shortArk} " +
+                    "#{input['sourceName']} #{input['sourceID']}")
+        $provisionalIDs.delete(fullArk)
+      end
     end
-
-    # Publish the item
-    metaText = uci.to_xml(indent:3)
-    File.open("/tmp/meta.tmp.xml", "w:UTF-8") { |io|
-      io.write(metaText)
-    }
-
-    out = ssh.exec_sc!("/apps/eschol/subi/lib/subiGuts.rb " +
-                 "#{replace == :files ? "--replaceFiles" : replace == :metadata ? "--replaceMetadata" : "--depositItem"} " +
-                 "#{shortArk} " +
-                 "#{comment} " +
-                 "#{input['submitterEmail'] || "''" } -", metaText)
-    puts "stdout from main subiGuts operation:\n#{out[:stdout]}"
-
-    if input.key?(:imgFiles)
-      imgs = JSON.generate(input[:imgFiles].map{ |i|
-          {"file": i[:file], "fetchLink": i[:fetchLink]}
-        })
-      out = ssh.exec_sc!("/apps/eschol/subi/lib/subiGuts.rb --uploadImages #{shortArk} '#{imgs}'")
-      puts "stdout from uploadImages:\n#{out[:stdout]}"
-    end
-
-    if input.key?(:cssFiles)
-      css = JSON.generate(input[:cssFiles].map{ |i|
-          {"file": i[:file], "fetchLink": i[:fetchLink]}
-        })
-      out = ssh.exec_sc!("/apps/eschol/subi/lib/subiGuts.rb --uploadImages #{shortArk} '#{css}'")
-      puts "stdout from uploadImages:\n#{out[:stdout]}"
-    end
-
-    # Claim the provisional ARK if not already done
-    if !replace
-      ssh.exec_sc!("/apps/eschol/subi/lib/subiGuts.rb --claimID #{shortArk} " +
-                   "#{input['sourceName']} #{input['sourceID']}")
-      $provisionalIDs.delete(fullArk)
-    end
+  rescue Net::SSH::Connection::Session::CommandFailed => e
+    return {id: fullArk, message: "ERROR: #{e.message}"}
+  rescue Net::SSH::Proxy::ConnectError => e
+    return {id: fullArk, message: "ERROR: #{e.message}"}
   end
 
   # All done.
-  return { id: fullArk, message: actionVerb + "." }
+  return { id: fullArk, message: actionVerb + "."}
 end
 
 ###################################################################################################
