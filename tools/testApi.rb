@@ -86,7 +86,7 @@ else
 end
 
 result = apiMutation("mintProvisionalID(input: $input) { id }", { input: ["MintProvisionalIDInput!", { sourceName: "elements", sourceID: "abc123" } ] })
-if result["mintProvisionalID"]["item"].index("ark:/13030/qt") == 0
+if result["mintProvisionalID"]["id"].index("ark:/13030/qt") == 0
   puts "success: mint provisional id"
 else
   puts "failed: mint provisional id"
